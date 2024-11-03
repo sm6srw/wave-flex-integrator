@@ -425,7 +425,7 @@ function bigIntReplacer(key, value) {
 /**
  * Attaches event listeners for WSJTClient.
  */
-let activeQSO = false;
+let activeQSO = {};
 
 /**
  * Attaches event listeners for DXClusterClient and FlexRadioClient.
@@ -509,19 +509,17 @@ function attachEventListeners() {
     });
 
     wsjtClient.on('status', (message) => {
-      const { dxCall, deCall, txEnabled } = message;
+      const { dxCall, deCall, id} = message;
       logger.debug(
         `WSJT-X Status received: ${JSON.stringify(message, bigIntReplacer)}`
       );
 
       if (config.wsjt.showQSO) {
-        if (dxCall && deCall && txEnabled && !activeQSO) {
-          activeQSO = true;
+        if (dxCall && deCall
+            && (!Object.hasOwn(activeQSO, id) || activeQSO[id] != dxCall)) {
+          activeQSO[id] = dxCall;
           logger.info(`WSJT-X QSO started with ${dxCall}`);
           utils.openLogQSO(dxCall, config);
-        } else if (!txEnabled && activeQSO) {
-          activeQSO = false;
-          logger.info(`QSO ended with ${dxCall}`);
         }
       }
     });
