@@ -31,7 +31,7 @@ class WSJTClient extends EventEmitter {
      * Starts listening for UDP messages from WSJT-X.
      */
     start() {
-        this.socket = dgram.createSocket('udp4');
+        this.socket = dgram.createSocket({type: 'udp4', reuseAddr: true});
 
         this.socket.on('error', (err) => {
             if (this.logger) {
@@ -96,9 +96,13 @@ class WSJTClient extends EventEmitter {
             } else {
                 console.log(`WSJT-X UDP socket listening on ${address.address}:${address.port}`);
             }
+          this.socket.setBroadcast(true);
+          this.socket.setMulticastTTL(128);
+          this.socket.addMembership('239.1.2.3');
+
         });
 
-        this.socket.bind(this.port, this.address);
+        this.socket.bind(this.port);
     }
 
     /**
