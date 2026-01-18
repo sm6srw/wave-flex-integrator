@@ -1,22 +1,37 @@
 /* styles.css */
 
-/* Optional: Add some custom styling for better visuals */
-body {
-  background-color: #f8f9fa;
+/* --- 1. Basic Page Reset --- */
+html, body {
+  height: auto;
+  min-height: 100%;
+  margin: 0;
+  /* Use Bootstrap variables for automatic Dark Mode support */
+  background-color: var(--bs-body-bg); 
+  color: var(--bs-body-color);
+  overflow-x: hidden;
 }
+
 .container-fluid {
+  display: block;
   padding-top: 20px;
+  padding-bottom: 40px;
 }
+
+/* --- 2. Typography & Components --- */
+
 h1 {
   margin-bottom: 30px;
 }
+
 .status-item {
   font-weight: bold;
+  min-width: 100px;
+  text-align: left;
 }
+
 #spotsList li {
   margin-bottom: 5px;
 }
-/* styles.css */
 
 .flag-icon {
   width: 32px;
@@ -25,18 +40,101 @@ h1 {
 }
 
 .label-text {
-  min-width: 150px; /* Adjust this value to control label width */
+  min-width: 150px;
   text-align: left;
 }
 
-.status-item {
-  min-width: 100px; /* Adjust this value to control the status message column width */
-  text-align: left;  /* Keep the status text left-aligned */
+/* Banner Image */
+.banner-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-bottom: 15px;
+  border-radius: 4px;
+  transition: all 0.3s ease; /* Smooth transition if we animate later */
 }
 
-/* Custom styles for banner image */
-.banner-image {
-  width: 100%; /* Set width to 100% of the browser window */
-  margin: 0; /* Remove any margin */
-  padding: 0; /* Remove any padding */
+/* Helper class to hide banner in Compact Mode */
+.banner-hidden {
+  display: none !important;
 }
+
+/* --- Global Profiles Grid Styles --- */
+
+#profilesGrid {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+}
+
+.band-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; 
+  width: 75px; 
+  flex-shrink: 0;
+}
+
+.band-header {
+  text-align: center;
+  font-weight: bold;
+  font-size: 1.1rem;
+  color: #888;
+  margin-bottom: 5px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 5px;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Common sizing for alignment */
+.grid-slot {
+  width: 100%;
+  height: 28px;
+  box-sizing: border-box;
+}
+
+/* Clickable Button */
+.profile-btn {
+  width: 100%;
+  height: 28px;
+  padding: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  font-size: 0.8rem !important;
+  font-weight: 700;
+  border: 1px solid rgba(0,0,0,0.15);
+  color: #fff;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+  white-space: nowrap;
+}
+
+.profile-btn:hover {
+  filter: brightness(110%);
+  cursor: pointer;
+  box-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Empty Placeholder (Invisible but takes space) */
+.empty-slot {
+  width: 100%;
+  height: 28px;
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+}
+
+/* Colors */
+.mode-cw { background-color: #d68100 !important; color: white !important; }
+.mode-ssb { background-color: #198754 !important; color: white !important; }
+.mode-digi { background-color: #0d6efd !important; color: white !important; }
+.mode-fm { background-color: #6f42c1 !important; color: white !important; }
+.mode-default { background-color: #6c757d !important; color: white !important; }

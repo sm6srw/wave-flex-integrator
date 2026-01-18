@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -15,6 +15,10 @@ const utils = require('./utils');
 const { setUtilLogger } = require('./utils');
 const UIManager = require('./ui_manager');
 const mergeWith = require('lodash.mergewith');
+const QRZClient = require('./qrz_client');
+const MqttRotatorClient = require('./mqtt_client');
+let mqttRotatorClient;
+let qsoWindow = null; // Reference to the QSO Assistant window
 
 let logger;
 let mainWindow;
@@ -31,6 +35,7 @@ let stationProfileName = null;
 let stationGridSquare = null;
 let stationCallsign = null;
 let config = null;
+let qrzClient;
 
 const isDebug = process.argv.includes('--debug');
 if (isDebug) {
@@ -123,53 +128,106 @@ if (fs.existsSync(localConfigPath)) {
  * Creates the main application window.
  */
 function createWindow() {
+  // Safely retrieve window configuration
+  const appConfig = config.application || {};
+  const winConfig = appConfig.window || {};
+
+  logger.info(`Restoring window at: x=${winConfig.x}, y=${winConfig.y}, w=${winConfig.width}, h=${winConfig.height}`);
+
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    show: false, // Start hidden if using a splash screen
+    // Use saved values OR defaults
+    width: winConfig.width || 900,
+    height: winConfig.height || 800,
+    // Important: x and y must be integers. If undefined, Electron centers automatically.
+    x: Number.isInteger(winConfig.x) ? winConfig.x : undefined,
+    y: Number.isInteger(winConfig.y) ? winConfig.y : undefined,
+    show: false, // Do not show until splash screen is done
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
     },
-    autoHideMenuBar: true, // This hides the menu bar
+    autoHideMenuBar: true,
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
-
-  // Remove the menu completely
   mainWindow.removeMenu();
 
-  mainWindow.on('closed', function () {
+  // --- ROBUST WINDOW STATE SAVING ---
+  let saveTimeout;
+
+  const saveWindowState = () => {
+    if (!mainWindow) return;
+    
+    // Get current position and size
+    const bounds = mainWindow.getBounds();
+
+    // Update config object in memory
+    if (!config.application) config.application = {};
+    config.application.window = bounds;
+
+    // Save to disk (debounced - wait 1 second after last movement)
+    // This prevents writing to disk continuously while dragging the window
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      storage.set('config', config, (error) => {
+        if (error) {
+          logger.error(`Failed to save window state: ${error.message}`);
+        } else {
+          // logger.debug('Window state saved to disk.'); 
+        }
+      });
+    }, 1000);
+  };
+
+  // Listen for both move and resize events
+  mainWindow.on('resize', saveWindowState);
+  mainWindow.on('move', saveWindowState);
+
+  // Auto-close QSO Assistant ---
+  mainWindow.on('closed', () => {
     mainWindow = null;
+    
+    // Close QSO Assistant if open
+    if (qsoWindow && !qsoWindow.isDestroyed()) {
+      qsoWindow.close();
+    }
   });
 
   uiManager = new UIManager(mainWindow, logger);
 
-  // Show the main window after the splash screen
   mainWindow.once('ready-to-show', () => {
     setTimeout(() => {
       if (splashWindow) {
         splashWindow.close();
       }
       mainWindow.show();
-    }, 3500); // Adjust the delay as needed
+      // Do not call .center() here, or it will override the restored position!
+    }, 3500); 
   });
+
+  // Auto-updater check for updates
+  autoUpdater.checkForUpdatesAndNotify();
+
+  // --- Updater Logic ---
 
   // Auto-updater check for updates
   autoUpdater.checkForUpdatesAndNotify();
 
   // Handle auto-update events
   autoUpdater.on('update-available', () => {
-    mainWindow.webContents.send('update_available');
+    if (mainWindow) {
+      mainWindow.webContents.send('update_available');
+    }
     logger.info('A new update is available.');
   });
 
   autoUpdater.on('update-downloaded', () => {
-    mainWindow.webContents.send('update_downloaded');
-    logger.info(
-      'Update downloaded. The application will now restart to install it.'
-    );
-    autoUpdater.quitAndInstall(); // Automatically quit and install the update
+    if (mainWindow) {
+      mainWindow.webContents.send('update_downloaded');
+    }
+    logger.info('Update downloaded. Waiting for user to restart.');
+    // REMOVED: autoUpdater.quitAndInstall(); 
+    // We now wait for the user to trigger it via IPC.
   });
 }
 
@@ -332,7 +390,25 @@ app.on('ready', () => {
         // Create clients (except flexRadioClient)
         wavelogClient = new WavelogClient(config, logger, mainWindow);
         dxClusterClient = new DXClusterClient(config, logger);
+        qrzClient = new QRZClient(config, logger);
+        // Init Rotator Client
+        mqttRotatorClient = new MqttRotatorClient(config, logger);
+        if (config.rotator && config.rotator.enabled) {
+            mqttRotatorClient.connect();
+        }
         augmentedSpotCache = new AugmentedSpotCache(config.augmentedSpotCache.maxSize, logger, config);
+
+        setTimeout(() => {
+          if (augmentedSpotCache) {
+             const healthStatus = augmentedSpotCache.getHealthStatus();
+             uiManager.sendCacheHealthUpdate(healthStatus);
+
+             setInterval(() => {
+               const healthStatus = augmentedSpotCache.getHealthStatus();
+               uiManager.sendCacheHealthUpdate(healthStatus);
+             }, 300000);
+          }
+        }, 5000);
 
         // Initialize WSJT-X client if enabled
         if (config.wsjt.enabled) {
@@ -603,22 +679,20 @@ function attachFlexRadioEventListeners() {
       logger.error(`FlexRadio error: ${error.message}`);
       uiManager.updateFlexRadioStatus('flexRadioError', error);
     });
+
+    flexRadioClient.on('globalProfilesList', (profiles) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('flex-global-profiles', profiles);
+      }
+    });
+    flexRadioClient.on('externalSpotTriggered', (callsign) => {
+        if (qsoWindow && !qsoWindow.isDestroyed()) {
+             qsoWindow.webContents.send('external-lookup', callsign);
+             qsoWindow.show(); // Bring window to front if hidden
+        }
+    });    
   }
 }
-
-/**
- * Fire the first cache health update after 5 seconds, then every 5 minutes thereafter.
- */
-setTimeout(() => {
-  const healthStatus = augmentedSpotCache.getHealthStatus();
-  uiManager.sendCacheHealthUpdate(healthStatus);
-
-  // Set the interval to fire every 5 minutes after the first 5-second delay
-  setInterval(() => {
-    const healthStatus = augmentedSpotCache.getHealthStatus();
-    uiManager.sendCacheHealthUpdate(healthStatus);
-  }, 300000); // 5 minutes in milliseconds
-}, 5000);
 
 /**
  * Attempts to reconnect to the DXCluster after a delay.
@@ -737,6 +811,12 @@ function main() {
       // If everything is configured, start the services
       flexRadioClient.connect();
       dxClusterClient.connect();
+
+      // Auto-open QSO Assistant?
+      if (config.application?.autoOpenQSO) {
+          createQSOWindow();
+      }      
+
       logger.info('All services started successfully.');
     }
   }
@@ -807,6 +887,17 @@ ipcMain.handle('update-config', async (event, newConfig) => {
         } else {
           console.log('Configuration updated successfully.');
         }
+
+        // --- Update global config in memory immediately ---
+        config = updatedConfig;
+
+        // --- Propagate config to clients that need live updates ---
+        if (qrzClient) {
+            qrzClient.config = config;
+        }
+        if (mqttRotatorClient) {
+            mqttRotatorClient.setConfig(config);
+        }
         resolve();
       }
     });
@@ -858,6 +949,195 @@ ipcMain.handle('get-station-details', async (event) => {
   }
 });
 
+ipcMain.handle('fetch-global-profiles', async () => {
+  if (flexRadioClient && flexRadioClient.isConnected()) {
+    flexRadioClient.getGlobalProfiles();
+    return { success: true };
+  }
+  return { success: false, error: 'Not connected' };
+});
+
+ipcMain.handle('load-global-profile', async (event, profileName) => {
+  if (flexRadioClient && flexRadioClient.isConnected()) {
+    flexRadioClient.loadGlobalProfile(profileName);
+    return { success: true };
+  }
+  return { success: false, error: 'Not connected' };
+});
+
+/**
+ * Handles IPC request to quit and install the update.
+ */
+ipcMain.handle('install-update', async () => {
+  logger.info('User requested install. Quitting and installing...');
+  autoUpdater.quitAndInstall();
+});
+
+// --- QSO Assistant IPC Handlers ---
+
+ipcMain.handle('open-qso-assistant', () => {
+  createQSOWindow();
+});
+
+ipcMain.handle('lookup-callsign', async (event, callsign) => {
+  logger.info(`Performing lookup for: ${callsign}`);
+  
+  // Check radio status
+  const isRadioConnected = flexRadioClient && flexRadioClient.isConnected();
+
+  // 1. Start requests in parallel
+  // Use '20m'/'SSB' as fallback, but ideally grab from Flex if connected
+  const wavelogPromise = wavelogClient.lookupCallsign(callsign, '20m', 'SSB');
+  
+  let qrzPromise = Promise.resolve(null);
+  if (config.qrz && config.qrz.enabled) {
+      qrzPromise = qrzClient.lookup(callsign);
+  }
+
+  // 2. Wait for results
+  const [wlData, qrzData] = await Promise.all([wavelogPromise, qrzPromise]);
+
+  // 3. Merge Data
+  let finalData = wlData || (qrzData ? { callsign: qrzData.callsign } : null);
+
+  if (!finalData) {
+      logger.warn(`Lookup failed for ${callsign} in both Wavelog and QRZ.`);
+      return null;
+  }
+
+  // Inject Radio Status into response
+  finalData.radio_connected = isRadioConnected;
+
+  let dxLat = null;
+  let dxLon = null;
+  let precision = 'none';
+
+  // --- Hybrid Strategy: QRZ overrides Geography ---
+  // --- Hybrid Strategy: QRZ overrides Geography ---
+  if (qrzData) {
+      logger.info(`QRZ Data found: ${qrzData.name}, Grid: ${qrzData.grid}`);
+      
+      if (qrzData.name) finalData.name = qrzData.name;
+      if (qrzData.grid) finalData.gridsquare = qrzData.grid;
+      if (qrzData.image) finalData.image = qrzData.image;
+      
+      // Only overwrite if QRZ provides a valid string, otherwise keep Wavelog's value
+      if (qrzData.country && qrzData.country.trim() !== '') {
+          finalData.dxcc = qrzData.country; 
+      } 
+      
+      if (qrzData.lat && qrzData.lon) {
+          dxLat = parseFloat(qrzData.lat);
+          dxLon = parseFloat(qrzData.lon);
+          precision = 'exact (QRZ)';
+      }
+  }
+
+  // Fallback to Wavelog coords
+  if (dxLat === null) {
+      if (finalData.latlng && Array.isArray(finalData.latlng) && finalData.latlng.length === 2) {
+          dxLat = parseFloat(finalData.latlng[0]);
+          dxLon = parseFloat(finalData.latlng[1]);
+          precision = 'exact (Wavelog)';
+      } else if (finalData.dxcc_lat) {
+          dxLat = parseFloat(finalData.dxcc_lat);
+          dxLon = parseFloat(finalData.dxcc_long);
+          precision = 'country';
+      }
+  }
+
+  // 4. Calculate Bearing
+  if (dxLat !== null && dxLon !== null && !isNaN(dxLat) && !isNaN(dxLon)) {
+      try {
+          const myGrid = await wavelogClient.getStationGridsquare();
+          if (myGrid) {
+              const myCoords = wavelogClient.gridToLatLon(myGrid);
+              if (myCoords) {
+                  const result = wavelogClient.calculateBearingDistance(
+                      myCoords.lat, myCoords.lon, dxLat, dxLon
+                  );
+                  
+                  finalData.bearing = result.bearing;
+                  finalData.distance = result.distance;
+
+                  finalData.bearing_lp = (result.bearing + 180) % 360;
+                  finalData.distance_lp = Math.round(40075 - result.distance); // Earth circumference - SP
+                  
+                  finalData.calc_precision = precision;
+                  logger.info(`Calculated: ${result.bearing} deg, ${result.distance} km (${precision})`);
+              }
+          }
+      } catch (err) {
+          logger.error(`Error calculating bearing: ${err.message}`);
+      }
+  }
+  
+  return finalData;
+});
+
+// --- Media IPC Handlers for QSO Assistant ---
+
+/**
+ * Opens an external URL in the default system browser.
+ */
+ipcMain.handle('open-external-link', async (event, url) => {
+  if (url) {
+    await shell.openExternal(url);
+  }
+});
+
+/**
+ * Opens a modal window to display the profile image in full size.
+ */
+ipcMain.handle('open-image-window', (event, imageUrl) => {
+  if (!imageUrl) return;
+
+  const imgWin = new BrowserWindow({
+    width: 800,
+    height: 800,
+    title: 'Profile Image',
+    icon: path.join(__dirname, 'assets/icon.png'), // Optional, if you have an icon
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  imgWin.setMenu(null); // Remove menu bar completely
+  imgWin.loadURL(imageUrl);
+});
+
+ipcMain.handle('rotate-rotor', (event, bearing) => {
+  logger.info(`ROTATOR CONTROL: Request to rotate to ${bearing} deg`);
+  
+  if (mqttRotatorClient) {
+      mqttRotatorClient.rotate(bearing);
+  } else {
+      logger.warn("Rotator client not initialized or disabled.");
+  }
+});
+
+ipcMain.handle('log-qso', (event, callsign) => {
+  utils.openLogQSO(callsign, config);
+});
+
+ipcMain.handle('send-dx-spot', async (event, { callsign, comment }) => {
+    if (!flexRadioClient || !flexRadioClient.isConnected()) return { success: false, error: "Radio not connected" };
+    if (!flexRadioClient.activeTXSlices || flexRadioClient.activeTXSlices.length === 0) return { success: false, error: "No Active TX Slice" };
+
+    try {
+        // Get freq in Hz, convert to kHz (e.g. 14020.5)
+        const freqHz = flexRadioClient.activeTXSlices[0].frequency * 1e6; 
+        const freqKHz = (freqHz / 1000).toFixed(1);
+
+        dxClusterClient.sendDxSpot(freqKHz, callsign, comment);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   if (logger) {
@@ -875,3 +1155,60 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
   }
 });
+
+/**
+ * Creates or Focuses the QSO Assistant Window.
+ */
+function createQSOWindow() {
+  if (qsoWindow) {
+    qsoWindow.focus();
+    return;
+  }
+
+  const qsoConfig = config.application?.qsoWindow || {};
+
+  qsoWindow = new BrowserWindow({
+    width: qsoConfig.width || 400,
+    height: qsoConfig.height || 500,
+    x: qsoConfig.x,
+    y: qsoConfig.y,
+    show: false,
+    frame: true, // Keep frame for moving
+    autoHideMenuBar: true,
+    alwaysOnTop: false, // User choice later
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+
+  qsoWindow.loadFile(path.join(__dirname, 'qso_assistant.html'));
+  qsoWindow.removeMenu();
+
+  qsoWindow.once('ready-to-show', () => {
+    qsoWindow.show();
+  });
+
+  // Save state on close
+  let saveTimeout;
+  const saveState = () => {
+    if (!qsoWindow) return;
+    const bounds = qsoWindow.getBounds();
+    if (!config.application) config.application = {};
+    config.application.qsoWindow = bounds;
+    
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+        storage.set('config', config, (err) => {
+            if(err) logger.error("Failed to save QSO window state");
+        });
+    }, 1000);
+  };
+
+  qsoWindow.on('resize', saveState);
+  qsoWindow.on('move', saveState);
+
+  qsoWindow.on('closed', () => {
+    qsoWindow = null;
+  });
+}

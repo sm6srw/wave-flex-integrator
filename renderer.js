@@ -11,6 +11,22 @@ function scrollToTop() {
 }
 
 /**
+ * Applies the selected theme to the application using Bootstrap's data-bs-theme attribute.
+ * @param {string} theme - 'light', 'dark', or 'system'
+ */
+function applyTheme(theme) {
+  if (theme === 'system') {
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.setAttribute('data-bs-theme', 'dark');
+    } else {
+      document.documentElement.setAttribute('data-bs-theme', 'light');
+    }
+  } else {
+    document.documentElement.setAttribute('data-bs-theme', theme);
+  }
+}
+
+/**
  * Converts a flag emoji to its 2-letter uppercase country code.
  * @param {string} emoji - The flag emoji (e.g., "🇺🇸").
  * @returns {string} - The 2-letter country code (e.g., "US") or an empty string if invalid.
@@ -97,7 +113,98 @@ function populateForm(config) {
     return;
   }
 
-  // Populate Augmented Spot Cache Max Size
+  // --- Populate Application General Settings ---
+  const appConfig = config.application || {};
+  
+  // Theme
+  const theme = appConfig.theme || 'system';
+  const themeSelect = document.getElementById('appTheme');
+  if (themeSelect) {
+    themeSelect.value = theme;
+    applyTheme(theme); // Apply immediately on load
+  }
+
+  // Startup Tab
+  const startupTab = appConfig.startupTab || 'status';
+  const startupTabSelect = document.getElementById('appStartupTab');
+  if (startupTabSelect) {
+    startupTabSelect.value = startupTab;
+  }
+
+  // Apply Startup Tab Logic (Switch to the configured tab)
+  if (startupTab && startupTab !== 'status') {
+      const tabElement = document.querySelector(`#${startupTab}-tab`);
+      if (tabElement && typeof bootstrap !== 'undefined') {
+          const tabInstance = new bootstrap.Tab(tabElement);
+          tabInstance.show();
+      }
+  }
+
+  // QSO Settings
+  const showMediaCheckbox = document.getElementById('appShowQsoMedia');
+  if (showMediaCheckbox) showMediaCheckbox.checked = appConfig.showQsoMedia || false;
+  
+  const autoLogCheckbox = document.getElementById('appAutoLogQso');
+  if (autoLogCheckbox) autoLogCheckbox.checked = appConfig.autoLogQso || false;
+    
+  // Compact Mode
+  const compactModeCheckbox = document.getElementById('appCompactMode');
+  if (compactModeCheckbox) {
+    compactModeCheckbox.checked = appConfig.compactMode || false;
+    applyCompactMode(appConfig.compactMode);
+  }
+
+  // Auto Open QSO Assistant
+  const autoOpenQSOCheckbox = document.getElementById('appAutoOpenQSO');
+  if (autoOpenQSOCheckbox) {
+    autoOpenQSOCheckbox.checked = appConfig.autoOpenQSO || false;
+  }
+
+  // Imperial Units
+  const useImperialCheckbox = document.getElementById('appUseImperial');
+  if (useImperialCheckbox) {
+    useImperialCheckbox.checked = appConfig.useImperial || false;
+  }
+
+ // Main Window Size
+  const winWidth = document.getElementById('appWindowWidth');
+  if (winWidth) winWidth.value = appConfig.window?.width || 900;
+  const winHeight = document.getElementById('appWindowHeight');
+  if (winHeight) winHeight.value = appConfig.window?.height || 800;
+
+  // QSO Assistant Size
+  const qsoConfig = appConfig.qsoWindow || {};
+  const qsoWidth = document.getElementById('qsoWindowWidth');
+  if (qsoWidth) qsoWidth.value = qsoConfig.width || 600;
+  const qsoHeight = document.getElementById('qsoWindowHeight');
+  if (qsoHeight) qsoHeight.value = qsoConfig.height || 500;
+
+  // --- Populate Rotator Settings ---
+  const rotConfig = config.rotator || { enabled: false, mqtt: {} };
+  const mqttConfig = rotConfig.mqtt || {};
+
+  const rotatorEnabledCheckbox = document.getElementById('rotatorEnabled');
+  if (rotatorEnabledCheckbox) rotatorEnabledCheckbox.checked = rotConfig.enabled;
+
+  document.getElementById('rotMqttHost').value = mqttConfig.host || '';
+  document.getElementById('rotMqttPort').value = mqttConfig.port || 1883;
+  document.getElementById('rotMqttUser').value = mqttConfig.username || '';
+  document.getElementById('rotMqttPass').value = mqttConfig.password || '';
+  document.getElementById('rotMqttTopic').value = mqttConfig.topicPrefix || '';
+
+  // --- Populate QRZ Settings ---
+  const qrzConfig = config.qrz || { enabled: false, username: '', password: '' };
+  
+  const qrzEnabledCheckbox = document.getElementById('qrzEnabled');
+  if (qrzEnabledCheckbox) qrzEnabledCheckbox.checked = qrzConfig.enabled;
+
+  const qrzUsernameInput = document.getElementById('qrzUsername');
+  if (qrzUsernameInput) qrzUsernameInput.value = qrzConfig.username;
+
+  const qrzPasswordInput = document.getElementById('qrzPassword');
+  if (qrzPasswordInput) qrzPasswordInput.value = qrzConfig.password;
+  
+  // --- Populate Augmented Spot Cache ---
   const augmentedSpotCacheMaxSizeInput = document.getElementById('augmentedSpotCacheMaxSize');
   if (augmentedSpotCacheMaxSizeInput) {
     augmentedSpotCacheMaxSizeInput.value = config.augmentedSpotCache.maxSize;
@@ -387,8 +494,46 @@ if (configForm) {
       }
     }
 
-    // Build the new configuration object from the form values
+  // Build the new configuration object from the form values
     const newConfig = {
+      // --- Application Settings ---
+      application: {
+        theme: document.getElementById('appTheme').value,
+        startupTab: document.getElementById('appStartupTab').value,
+        compactMode: document.getElementById('appCompactMode').checked,
+        autoOpenQSO: document.getElementById('appAutoOpenQSO').checked,
+        useImperial: document.getElementById('appUseImperial').checked,
+        showQsoMedia: document.getElementById('appShowQsoMedia').checked,
+        autoLogQso: document.getElementById('appAutoLogQso').checked, 
+        window: {
+            width: parseInt(document.getElementById('appWindowWidth').value) || 900,
+            height: parseInt(document.getElementById('appWindowHeight').value) || 800
+        },
+        qsoWindow: {
+            width: parseInt(document.getElementById('qsoWindowWidth').value) || 600,
+            height: parseInt(document.getElementById('qsoWindowHeight').value) || 500,
+            x: config.application?.qsoWindow?.x,
+            y: config.application?.qsoWindow?.y
+        }
+      },
+      // --- Rotator Settings ---
+      rotator: {
+        enabled: document.getElementById('rotatorEnabled').checked,
+        type: 'MQTT',
+        mqtt: {
+            host: document.getElementById('rotMqttHost').value.trim(),
+            port: parseInt(document.getElementById('rotMqttPort').value) || 1883,
+            username: document.getElementById('rotMqttUser').value.trim(),
+            password: document.getElementById('rotMqttPass').value.trim(),
+            topicPrefix: document.getElementById('rotMqttTopic').value.trim().replace(/\/$/, '') // Remove trailing slash
+        }
+      },
+      // --- QRZ Settings ---
+      qrz: {
+        enabled: document.getElementById('qrzEnabled').checked,
+        username: document.getElementById('qrzUsername').value.trim(),
+        password: document.getElementById('qrzPassword').value.trim()
+      },      
       augmentedSpotCache: {
         maxSize: parseInt(document.getElementById('augmentedSpotCacheMaxSize').value, 10),
       },
@@ -507,6 +652,9 @@ if (configForm) {
       },
     };
 
+    // Apply theme immediately so user sees the change without restart
+    applyTheme(newConfig.application.theme);
+
     // Send the updated config back to the main process
     try {
       await ipcRenderer.invoke('update-config', newConfig);
@@ -543,9 +691,17 @@ function handleStatusUpdate(status) {
   switch (status.event) {
     case 'flexRadioConnected':
       updateFlexRadioStatus('Connected');
+      isFlexRadioConnected = true;
+      // If we are currently on the Profiles tab, load data automatically now
+      const activeTab = document.querySelector('.nav-link.active');
+      if (activeTab && activeTab.id === 'profiles-tab') {
+          loadProfiles();
+      }
       break;
+
     case 'flexRadioDisconnected':
       updateFlexRadioStatus('Disconnected');
+      isFlexRadioConnected = false; // Mark as disconnected
       break;
     case 'flexRadioError':
       updateFlexRadioStatus(`Error: ${status.error}`);
@@ -827,11 +983,227 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// Listen for update events
+// --- Update Handling Logic ---
+
+// Listen for update available
 ipcRenderer.on('update_available', () => {
-  alert('A new update is available. It will be downloaded automatically.');
+  // Show a standard alert or a small toast just to say "Downloading..."
+  // For now, we can log it or show a non-intrusive alert.
+  console.log('Update available, downloading...');
+  // Optional: You could show a small toast here too "Downloading update..."
 });
 
+// Listen for update downloaded
 ipcRenderer.on('update_downloaded', () => {
-  alert('Update downloaded. The application will now restart to install it.');
+  const toastElement = document.getElementById('updateToast');
+  const restartBtn = document.getElementById('restartAndInstallBtn');
+
+  if (toastElement) {
+    // Initialize Bootstrap Toast
+    // We assume bootstrap is loaded via CDN in index.html
+    const toast = new bootstrap.Toast(toastElement, {
+      autohide: false // Keep it visible until user clicks
+    });
+
+    // Attach click handler to the Restart button
+    if (restartBtn) {
+      restartBtn.onclick = () => {
+        // Change text to indicate action
+        restartBtn.textContent = 'Restarting...';
+        restartBtn.disabled = true;
+        // Tell main process to install
+        ipcRenderer.invoke('install-update');
+      };
+    }
+
+    toast.show();
+  }
 });
+
+// --- Profile Handling Logic ---
+
+let isFlexRadioConnected = false;
+
+// Listen for when the Profiles tab is clicked/shown
+const profilesTabElement = document.getElementById('profiles-tab');
+if (profilesTabElement) {
+  profilesTabElement.addEventListener('shown.bs.tab', function (event) {
+    loadProfiles();
+  });
+}
+
+/**
+ * Invokes the main process to fetch profiles.
+ * Checks connection status before attempting fetch.
+ */
+function loadProfiles() {
+    const grid = document.getElementById('profilesGrid');
+    
+    // 1. If radio is not connected, show waiting message
+    if (!isFlexRadioConnected) {
+        grid.innerHTML = `
+            <div class="d-flex flex-column align-items-center mt-5 text-muted">
+                <div class="spinner-border text-secondary mb-2" role="status"></div>
+                <div>Waiting for FlexRadio connection...</div>
+            </div>`;
+        return;
+    }
+
+    // 2. Only show loading spinner if empty or showing waiting message
+    if(grid.children.length === 0 || grid.innerText.includes('Waiting')) {
+        grid.innerHTML = '<div class="d-flex justify-content-center mt-4"><div class="spinner-border text-primary" role="status"></div></div>';
+    }
+
+    // 3. Fetch data
+    ipcRenderer.invoke('fetch-global-profiles').then(result => {
+        if(!result.success) {
+            grid.innerHTML = `<div class="alert alert-danger m-3">${result.error}</div>`;
+        }
+    });
+}
+
+// Listen for profile data coming from the Main process
+ipcRenderer.on('flex-global-profiles', (event, profiles) => {
+  renderProfiles(profiles);
+});
+
+/**
+ * Renders a Dynamic Grid.
+ * 1. Scans all profiles to see which Modes exist globally.
+ * 2. Creates rows ONLY for those modes.
+ * 3. Fills gaps with empty slots to maintain alignment.
+ * @param {string[]} profiles - List of profile names.
+ */
+function renderProfiles(profiles) {
+  const grid = document.getElementById('profilesGrid');
+  grid.innerHTML = '';
+
+  if (!profiles || profiles.length === 0) {
+    grid.innerHTML = '<div class="alert alert-warning m-3">No profiles found.</div>';
+    return;
+  }
+
+  // 1. Setup Bands and Sorting
+  const displayOrder = ['6M', '10M', '12M', '15M', '17M', '20M', '30M', '40M', '60M', '80M', '160M'];
+  const searchOrder = [...displayOrder].sort((a, b) => b.length - a.length);
+
+  // 2. Define all POSSIBLE modes and their detection logic
+  const allModeDefinitions = [
+      { id: 'CW',   label: 'CW',   matcher: (n) => n.includes('CW') },
+      { id: 'DIGI', label: 'DIGU', matcher: (n) => n.includes('DIG') || n.includes('FT8') || n.includes('RTTY') || n.includes('DATA') },
+      { id: 'SSB',  label: 'SSB',  matcher: (n) => n.includes('SSB') || n.includes('LSB') || n.includes('USB') || n.includes('PH') },
+      { id: 'FM',   label: 'FM',   matcher: (n) => n.includes('FM') }
+  ];
+
+  // 3. Bucket profiles into bands AND detect active modes
+  const bandBuckets = {};
+  displayOrder.forEach(b => bandBuckets[b] = []);
+  
+  // Track which modes are actually used across ALL bands
+  const activeModesSet = new Set();
+
+  profiles.forEach(name => {
+    if (name === 'Default') return;
+    const upperName = name.toUpperCase();
+    const lowerName = name.toLowerCase();
+
+    // Check which mode this profile belongs to
+    allModeDefinitions.forEach(mode => {
+        if (mode.matcher(upperName)) {
+            activeModesSet.add(mode.id);
+        }
+    });
+    
+    // Assign to band bucket
+    for (const bandLabel of searchOrder) {
+      if (lowerName.includes(bandLabel.toLowerCase())) {
+          bandBuckets[bandLabel].push(name);
+          return;
+      }
+    }
+  });
+
+  // 4. Filter the Mode Rows: Only keep modes that exist in at least one profile
+  const rowsToRender = allModeDefinitions.filter(mode => activeModesSet.has(mode.id));
+
+  // 5. Render the Grid
+  displayOrder.forEach(bandKey => {
+    // Optional: Skip empty bands if you want to save horizontal space
+    if (bandBuckets[bandKey].length === 0) return;
+
+    const col = document.createElement('div');
+    col.className = 'band-column';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'band-header';
+    header.innerText = bandKey;
+    col.appendChild(header);
+
+    // Render Rows based on GLOBALLY active modes
+    rowsToRender.forEach(modeDef => {
+        // Does THIS band have a profile for THIS mode?
+        const matchingProfile = bandBuckets[bandKey].find(pName => modeDef.matcher(pName.toUpperCase()));
+
+        if (matchingProfile) {
+            // Yes -> Render Button
+            const btn = document.createElement('button');
+            btn.className = 'btn profile-btn grid-slot'; 
+            btn.innerText = modeDef.label; 
+            btn.title = matchingProfile;
+
+            if (modeDef.id === 'CW') btn.classList.add('mode-cw');
+            else if (modeDef.id === 'SSB') btn.classList.add('mode-ssb');
+            else if (modeDef.id === 'DIGI') btn.classList.add('mode-digi');
+            else if (modeDef.id === 'FM') btn.classList.add('mode-fm');
+            else btn.classList.add('mode-default');
+
+            btn.onclick = () => {
+                const originalText = btn.innerText;
+                btn.innerText = '...';
+                btn.disabled = true;
+                ipcRenderer.invoke('load-global-profile', matchingProfile).then(() => {
+                    setTimeout(() => {
+                        btn.innerText = originalText;
+                        btn.disabled = false;
+                    }, 500);
+                });
+            };
+            col.appendChild(btn);
+        } else {
+            // No -> Render Empty Slot (To keep grid aligned with neighbors)
+            const placeholder = document.createElement('div');
+            placeholder.className = 'empty-slot grid-slot';
+            col.appendChild(placeholder);
+        }
+    });
+
+    grid.appendChild(col);
+  });
+}
+
+/**
+ * Toggles the visibility of the banner based on compact mode setting.
+ * @param {boolean} isCompact - True to hide banner, false to show.
+ */
+function applyCompactMode(isCompact) {
+  const banner = document.querySelector('.banner-image');
+  if (banner) {
+    if (isCompact) {
+      banner.classList.add('banner-hidden');
+    } else {
+      banner.classList.remove('banner-hidden');
+    }
+  }
+}
+
+// --- QSO Assistant Logic ---
+
+const openQSOBtn = document.getElementById('openQSOAssistantBtn');
+if (openQSOBtn) {
+  openQSOBtn.addEventListener('click', () => {
+    // This IPC channel will be implemented in Step 3
+    ipcRenderer.invoke('open-qso-assistant'); 
+    console.log('Requesting to open QSO Assistant...');
+  });
+}

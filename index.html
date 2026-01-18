@@ -57,8 +57,21 @@
           aria-selected="false"
           >Configuration</a
         >
+      </li> 
+      <li class="nav-item" role="presentation">
+        <a
+          class="nav-link"
+          id="profiles-tab"
+          data-bs-toggle="tab"
+          href="#profiles"
+          role="tab"
+          aria-controls="profiles"
+          aria-selected="false"
+          >Profiles</a
+        >
       </li>
-      <!-- New About Tab -->
+         
+      <!-- About Tab -->
       <li class="nav-item" role="presentation">
         <a
           class="nav-link"
@@ -76,78 +89,88 @@
     <!-- Tab Contents -->
     <div class="tab-content" id="mainTabContent">
       
-    <!-- Status Tab -->
-    <div
-      class="tab-pane fade show active"
-      id="status"
-      role="tabpanel"
-      aria-labelledby="status-tab"
-    >
+      <!-- Status Tab -->
+      <div
+        class="tab-pane fade show active"
+        id="status"
+        role="tabpanel"
+        aria-labelledby="status-tab"
+      >
+
       <!-- Status Content -->
-      <div id="statusContent" class="mt-4">
-        <!-- Connected Services Section -->
-        <h3>Connected Services</h3>
-        <div class="row">
-          <!-- Row 1, Column 1: DX Cluster -->
-          <div class="col-md-6">
-            <ul class="list-group">
-              <li class="list-group-item d-flex">
-                <span class="label-text">DX Cluster:</span>
-                <span id="dxClusterStatus" class="status-item">Disconnected</span>
-              </li>
-            </ul>
+        <div id="statusContent" class="mt-4">
+
+          <!-- Quick Actions -->
+          <div class="d-flex justify-content-end mb-3">
+            <button id="openQSOAssistantBtn" class="btn btn-primary">
+              <!-- Icon placeholder if you want one, e.g. <i class="bi bi-window"></i> -->
+              Open QSO Assistant
+            </button>
           </div>
 
-          <!-- Row 1, Column 2: Wavelog API -->
-          <div class="col-md-6">
-            <ul class="list-group">
-              <li class="list-group-item d-flex">
-                <span class="label-text">Wavelog Profile:</span>
-                <span id="wavelogApiStatus" class="status-item">Unknown</span>
-              </li>
-            </ul>
+          <!-- Connected Services Section -->
+          <h3>Connected Services</h3>
+          <div class="row">
+            <!-- Row 1, Column 1: DX Cluster -->
+            <div class="col-md-6">
+              <ul class="list-group">
+                <li class="list-group-item d-flex">
+                  <span class="label-text">DX Cluster:</span>
+                  <span id="dxClusterStatus" class="status-item">Disconnected</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Row 1, Column 2: Wavelog API -->
+            <div class="col-md-6">
+              <ul class="list-group">
+                <li class="list-group-item d-flex">
+                  <span class="label-text">Wavelog Profile:</span>
+                  <span id="wavelogApiStatus" class="status-item">Unknown</span>
+                </li>
+              </ul>
+            </div>
           </div>
+
+          <div class="row mt-3">
+            <!-- Row 2, Column 1: FlexRadio -->
+            <div class="col-md-6">
+              <ul class="list-group">
+                <li class="list-group-item d-flex">
+                  <span class="label-text">FlexRadio:</span>
+                  <span id="flexRadioStatus" class="status-item">Disconnected</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Row 2, Column 2: WSJT-X Listener -->
+            <div class="col-md-6">
+              <ul class="list-group">
+                <li class="list-group-item d-flex">
+                  <span class="label-text">WSJT-X Listener:</span>
+                  <span id="wsjtxListenerStatus" class="status-item">Unknown</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Most Recent Spot Section -->
+          <h3 class="mt-4">Most Recent Spot</h3>
+          <ul id="spotsList" class="list-group">
+            <li class="list-group-item d-flex align-items-center">
+              <div>Unknown</div>
+            </li>
+          </ul>
+
+          <!-- Cache Health Section -->
+          <h3 class="mt-4">Wavelog Augmented Spot Data Cache Health</h3>
+          <ul class="list-group">
+            <li class="list-group-item">
+              <span id="cacheHealth" class="status-item">Uninitialized</span>
+            </li>
+          </ul>
         </div>
-
-        <div class="row mt-3">
-          <!-- Row 2, Column 1: FlexRadio -->
-          <div class="col-md-6">
-            <ul class="list-group">
-              <li class="list-group-item d-flex">
-                <span class="label-text">FlexRadio:</span>
-                <span id="flexRadioStatus" class="status-item">Disconnected</span>
-              </li>
-            </ul>
-          </div>
-
-          <!-- Row 2, Column 2: WSJT-X Listener -->
-          <div class="col-md-6">
-            <ul class="list-group">
-              <li class="list-group-item d-flex">
-                <span class="label-text">WSJT-X Listener:</span>
-                <span id="wsjtxListenerStatus" class="status-item">Unknown</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- Most Recent Spot Section -->
-        <h3 class="mt-4">Most Recent Spot</h3>
-        <ul id="spotsList" class="list-group">
-          <li class="list-group-item d-flex align-items-center">
-            <div>Unknown</div>
-          </li>
-        </ul>
-
-        <!-- Cache Health Section -->
-        <h3 class="mt-4">Wavelog Augmented Spot Data Cache Health</h3>
-        <ul class="list-group">
-          <li class="list-group-item">
-            <span id="cacheHealth" class="status-item">Uninitialized</span>
-          </li>
-        </ul>
       </div>
-    </div>
 
       
       <!-- Configuration Tab -->
@@ -161,6 +184,165 @@
         <div id="configContent" class="mt-4">
           <h3>Configuration</h3>
           <form id="configForm">
+
+            <!-- Application Settings -->
+            <h4 class="mt-4">Application General Settings</h4>
+            
+            <div class="row">
+              <!-- Theme -->
+              <div class="col-md-6 mb-3">
+                <label for="appTheme" class="form-label">Theme</label>
+                <select class="form-select" id="appTheme">
+                  <option value="system">System Default</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </div>
+              
+              <!-- Startup Tab -->
+              <div class="col-md-6 mb-3">
+                <label for="appStartupTab" class="form-label">Startup Tab</label>
+                <select class="form-select" id="appStartupTab">
+                  <option value="status">Status</option>
+                  <option value="config">Configuration</option>
+                  <option value="profiles">Profiles</option>
+                  <option value="about">About</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Imperial Units (The Oddities) -->
+            <div class="mb-4">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="appUseImperial">
+                  <label class="form-check-label fw-bold" for="appUseImperial">Use Imperial Units</label>
+                </div>
+                <div class="form-text text-muted small mt-1">
+                    Activate if you live in one of the three countries on Earth that still insist on using miles, Fahrenheit and other imperial oddities. 
+                    Everyone else can safely leave this as not activated and enjoy Metric (km).
+                </div>
+            </div>
+
+            <!-- QSO Assistant Settings -->
+            <h5 class="mt-4">QSO Assistant Settings</h5>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="appShowQsoMedia">
+                  <label class="form-check-label" for="appShowQsoMedia">Show Profile Image & Map</label>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="appAutoLogQso">
+                  <label class="form-check-label" for="appAutoLogQso">Auto-Log to Wavelog on Enter</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Compact Mode & Auto Open -->
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="appCompactMode">
+                  <label class="form-check-label" for="appCompactMode">Compact Mode (Hide Banner)</label>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="appAutoOpenQSO">
+                  <label class="form-check-label" for="appAutoOpenQSO">Auto-open QSO Assistant on start</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Window Sizes -->
+            <h5 class="mt-3">Window Sizes</h5>
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Main Window (Width x Height)</label>
+                <div class="input-group">
+                  <input type="number" class="form-control" id="appWindowWidth" placeholder="W">
+                  <span class="input-group-text">x</span>
+                  <input type="number" class="form-control" id="appWindowHeight" placeholder="H">
+                </div>
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">QSO Assistant (Width x Height)</label>
+                <div class="input-group">
+                  <input type="number" class="form-control" id="qsoWindowWidth" placeholder="W">
+                  <span class="input-group-text">x</span>
+                  <input type="number" class="form-control" id="qsoWindowHeight" placeholder="H">
+                </div>
+              </div>
+            </div>
+
+            <!-- Rotator Control -->
+            <h4 class="mt-4">Rotator Control</h4>
+
+            <div class="mb-3 text-muted small">
+                Designed for <strong>RemoteQTH.com Simple Rotator Interface V</strong> via MQTT.
+                <a href="https://remoteqth.com/" target="_new" class="text-decoration-none ms-1">
+                    <i class="bi bi-box-arrow-up-right"></i> Visit Manufacturer
+                </a>
+            </div>
+            
+            <div class="mb-3">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="rotatorEnabled">
+                <label class="form-check-label" for="rotatorEnabled">Enable Rotator Integration (MQTT)</label>
+              </div>
+            </div>
+            
+            <!-- MQTT Settings -->
+            <div class="p-3 mb-3 border rounded">
+                <div class="row">
+                    <div class="col-md-8 mb-2">
+                        <label class="form-label small fw-bold">Broker Host (IP)</label>
+                        <input type="text" class="form-control form-control-sm" id="rotMqttHost" placeholder="e.g. 192.168.1.50">
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small fw-bold">Port</label>
+                        <input type="number" class="form-control form-control-sm" id="rotMqttPort" value="1883">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small fw-bold">Username</label>
+                        <input type="text" class="form-control form-control-sm" id="rotMqttUser" placeholder="home">
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small fw-bold">Password</label>
+                        <input type="password" class="form-control form-control-sm" id="rotMqttPass">
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-bold">Topic Prefix</label>
+                    <input type="text" class="form-control form-control-sm" id="rotMqttTopic" placeholder="SM6KZW/0/ROT">
+                    <div class="form-text small">Do not include trailing slash. Logic appends '/set_azimuth'.</div>
+                </div>
+            </div>
+
+            <!-- QRZ.com Configuration -->
+            <h4 class="mt-4">QRZ.com Integration (XML Data)</h4>
+            <div class="mb-3">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="qrzEnabled">
+                <label class="form-check-label" for="qrzEnabled">Enable QRZ.com Lookup (Required for precise bearing)</label>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label for="qrzUsername" class="form-label">Username</label>
+                <input type="text" class="form-control" id="qrzUsername" placeholder="QRZ Username">
+              </div>
+              <div class="col-md-6 mb-3">
+                <label for="qrzPassword" class="form-label">Password</label>
+                <input type="password" class="form-control" id="qrzPassword" placeholder="QRZ Password">
+              </div>
+            </div>
+            
+            <hr class="my-4">          
             
             <!-- Augmented Spot Cache -->
             <h4 class="mt-4">Augmented Spot Cache</h4>
@@ -403,6 +585,24 @@
         </div>
       </div>
 
+      <!-- Profiles Tab -->
+      <div
+        class="tab-pane fade"
+        id="profiles"
+        role="tabpanel"
+        aria-labelledby="profiles-tab"
+      >
+        <div id="profilesContent" class="mt-3">
+          <!-- Grid Container -->
+          <div id="profilesGrid" class="container-fluid p-0">
+            <div class="text-center text-muted mt-5">
+               <div class="spinner-border text-secondary" role="status"></div>
+               <div>Waiting for data...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- About Tab -->
       <div
         class="tab-pane fade"
@@ -422,17 +622,36 @@
           </p>
           <p><strong>Author:</strong> <a target="_new" href="https://github.com/tnxqso">TNX QSO Community</a></p>
           <p><strong>License:</strong> <a target="_new" href="https://opensource.org/license/mit"> MIT License</a></p>
-          <!-- Add more placeholders as needed -->
         </div>
       </div>
 
     </div>
   </div>
 
+<!-- Update Notification Toast -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+      <div id="updateToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+          <strong class="me-auto text-primary">Update Ready</strong>
+          <small>Just now</small>
+          <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body">
+          A new version has been downloaded and is ready to install.
+          <div class="mt-2 pt-2 border-top">
+            <button type="button" id="restartAndInstallBtn" class="btn btn-primary btn-sm">Restart & Install</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="toast">Later</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div> <!-- End of container-fluid -->
+
   <!-- Include Bootstrap JS from CDNJS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js" integrity="sha512-VK2zcvntEufaimc+efOYi622VN5ZacdnufnmX7zIhCPmjhKnOi9ZDMtg1/ug5l183f19gG1/cBstPO4D8N/Img==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  
-  <!-- Include renderer script -->
+
+    <!-- Include renderer script -->
   <script src="renderer.js"></script>
 </body>
 </html>

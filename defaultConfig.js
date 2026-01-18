@@ -2,6 +2,51 @@
 
 const defaultConfig = {
 
+  // ==============================
+  // Application Settings
+  // ==============================
+  application: {
+    theme: 'system',
+    startupTab: 'status',
+    compactMode: false,
+    autoOpenQSO: false,
+    useImperial: false,
+    showQsoMedia: false,
+    autoLogQso: false,
+    window: {
+      width: 900,
+      height: 800
+    },
+    qsoWindow: {
+        width: 600,
+        height: 500
+    }
+  },
+
+  // ==============================
+  // Rotator Configuration
+  // ==============================
+  rotator: {
+    enabled: false,          // Master switch
+    type: 'MQTT',            // Future proofing (could be 'Rotctl' later)
+    mqtt: {
+        host: '192.168.x.x', // MQTT Server hostname or IP
+        port: 1883,
+        username: 'home',
+        password: '',
+        topicPrefix: 'YOURCALLSIGN/0/ROT' // The root of your topics
+    }
+  },
+
+  // ==============================
+  // External Services (QRZ.com)
+  // ==============================
+  qrz: {
+    enabled: false,          // Enable lookup against QRZ XML API
+    username: '',            // Your QRZ.com login username
+    password: ''             // Your QRZ.com login password
+  },
+    
   // ===========================================================
   // The augmented Spot Cache
   // where we store data from Wavelog API for enriching spots
