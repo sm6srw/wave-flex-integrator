@@ -13,6 +13,9 @@ const defaultConfig = {
     useImperial: false,
     showQsoMedia: false,
     autoLogQso: false,
+    startMinimized: false,
+    minimizeToTray: true,
+    startAtLogin: false,
     window: {
       width: 900,
       height: 800
@@ -161,6 +164,15 @@ const defaultConfig = {
     showQSO: true,
     logQSO: true,
   },
+
+  // ==============================
+  // Local HTTP CAT Listener
+  // ==============================
+  catListener: {
+    enabled: true,
+    host: '127.0.0.1', // Listen on localhost by default for security
+    port: 54321,       // Default Wavelog port
+  },  
 
 };
 

@@ -1,3 +1,4 @@
+// renderer.js
 'use strict';
 
 const { ipcRenderer } = require('electron');
@@ -114,8 +115,31 @@ function populateForm(config) {
   }
 
   // --- Populate Application General Settings ---
+  // IMPORTANT: Must be defined before using it for Tray settings
   const appConfig = config.application || {};
+
+// Tray & Startup Settings
+  const startLoginCheck = document.getElementById('appStartAtLogin'); // <-- NY
+  if (startLoginCheck) startLoginCheck.checked = appConfig.startAtLogin || false;
+
+  const minTrayCheck = document.getElementById('appMinimizeToTray');
+  if (minTrayCheck) minTrayCheck.checked = appConfig.minimizeToTray || false;
+
+  const startMinCheck = document.getElementById('appStartMinimized');
+  if (startMinCheck) startMinCheck.checked = appConfig.startMinimized || false;
+
+  // Populate CAT Listener Settings
+  const catConfig = config.catListener || { enabled: false, host: '127.0.0.1', port: 54321 };
   
+  const catEnabled = document.getElementById('catListenerEnabled');
+  if(catEnabled) catEnabled.checked = catConfig.enabled;
+
+  const catHost = document.getElementById('catListenerHost');
+  if(catHost) catHost.value = catConfig.host;
+
+  const catPort = document.getElementById('catListenerPort');
+  if(catPort) catPort.value = catConfig.port;
+
   // Theme
   const theme = appConfig.theme || 'system';
   const themeSelect = document.getElementById('appTheme');
@@ -499,6 +523,9 @@ if (configForm) {
       // --- Application Settings ---
       application: {
         theme: document.getElementById('appTheme').value,
+        startAtLogin: document.getElementById('appStartAtLogin').checked,
+        minimizeToTray: document.getElementById('appMinimizeToTray').checked,
+        startMinimized: document.getElementById('appStartMinimized').checked,        
         startupTab: document.getElementById('appStartupTab').value,
         compactMode: document.getElementById('appCompactMode').checked,
         autoOpenQSO: document.getElementById('appAutoOpenQSO').checked,
@@ -516,6 +543,11 @@ if (configForm) {
             y: config.application?.qsoWindow?.y
         }
       },
+      catListener: {
+        enabled: document.getElementById('catListenerEnabled').checked,
+        host: document.getElementById('catListenerHost').value.trim() || '127.0.0.1',
+        port: parseInt(document.getElementById('catListenerPort').value) || 54321
+      },      
       // --- Rotator Settings ---
       rotator: {
         enabled: document.getElementById('rotatorEnabled').checked,

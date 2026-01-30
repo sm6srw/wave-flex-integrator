@@ -1,9 +1,10 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, Notification } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const storage = require('electron-json-storage');
 const DXClusterClient = require('./dx_cluster_client');
 const FlexRadioClient = require('./flexradio_client');
@@ -17,6 +18,9 @@ const UIManager = require('./ui_manager');
 const mergeWith = require('lodash.mergewith');
 const QRZClient = require('./qrz_client');
 const MqttRotatorClient = require('./mqtt_client');
+const HttpCatListener = require('./http_cat_listener');
+
+let httpCatListener;
 let mqttRotatorClient;
 let qsoWindow = null; // Reference to the QSO Assistant window
 
@@ -28,7 +32,8 @@ let wsjtClient;
 let wavelogClient;
 let uiManager;
 let isShuttingDown = false;
-
+let tray = null;
+let isQuitting = false;
 let appConfigured = false;
 let stationId = null;
 let stationProfileName = null;
@@ -38,10 +43,24 @@ let config = null;
 let qrzClient;
 
 const isDebug = process.argv.includes('--debug');
+
+function getDebugLogPath() {
+  const localAppData =
+    process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+
+  return path.join(localAppData, 'wave-flex-integrator', 'logs', 'debug.log');
+}
+
+const debugLogPath = getDebugLogPath();
+
 if (isDebug) {
-  console.log(
-    'Debug mode is enabled, debug messages can be found in file: debug.log'
-  );
+  // Ensure the directory exists
+  fs.mkdirSync(path.dirname(debugLogPath), { recursive: true });
+
+  console.log(`Debug mode is enabled.`);
+  console.log(`Debug log file (absolute): ${debugLogPath}`);
+  console.log(`Process CWD: ${process.cwd()}`);
+  console.log(`Executable: ${process.execPath}`);
 } else {
   console.log('Running in normal mode');
 }
@@ -124,6 +143,84 @@ if (fs.existsSync(localConfigPath)) {
   console.log('Loaded default configuration.');
 }
 
+function createTray() {
+  const iconPath = path.join(__dirname, 'assets/icons/icon.png');
+  const trayIcon = nativeImage.createFromPath(iconPath);
+  
+  tray = new Tray(trayIcon.resize({ width: 16, height: 16 }));
+  tray.setToolTip('Wave-Flex Integrator');
+
+  const contextMenu = Menu.buildFromTemplate([
+    { 
+      label: 'Show Wave-Flex Integrator', 
+      click: () => {
+        if (mainWindow) mainWindow.show();
+      } 
+    },
+    { type: 'separator' },
+    { 
+        label: 'Restart', 
+        click: () => {
+            app.relaunch();
+            app.exit(0);
+        } 
+    },
+    { 
+      label: 'Quit', 
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      } 
+    }
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  tray.on('click', () => {
+    if (mainWindow) {
+        if (mainWindow.isVisible()) {
+            if (!config.application.minimizeToTray) {
+                 mainWindow.focus();
+            } else {
+                 mainWindow.hide();
+            }
+        } else {
+            mainWindow.show();
+        }
+    }
+  });
+}
+
+/**
+ * Configures the application to launch at login based on settings.
+ * Handles both Development (npm start) and Production (installed .exe) paths.
+ */
+function updateLoginSettings() {
+  const isEnabled = config.application?.startAtLogin || false;
+  
+  if (!app.isPackaged) {
+    // DEVELOPMENT MODE
+    // In dev, process.execPath is the electron binary.
+    // We must pass the project path as an argument so it knows what to run.
+    app.setLoginItemSettings({
+      openAtLogin: isEnabled,
+      path: process.execPath, 
+      args: [path.resolve(__dirname)] // Points electron.exe to the current folder
+    });
+  } else {
+    // PRODUCTION MODE
+    // In prod, process.execPath is the actual WaveFlexIntegrator.exe.
+    // No arguments needed.
+    app.setLoginItemSettings({
+      openAtLogin: isEnabled,
+      path: process.execPath,
+      args: [] 
+    });
+  }
+  
+  logger.info(`Updated Login Item Settings: openAtLogin=${isEnabled}, isPackaged=${app.isPackaged}`);
+}
+
 /**
  * Creates the main application window.
  */
@@ -134,19 +231,20 @@ function createWindow() {
 
   logger.info(`Restoring window at: x=${winConfig.x}, y=${winConfig.y}, w=${winConfig.width}, h=${winConfig.height}`);
 
+  const shouldShow = !appConfig.startMinimized;
+
   mainWindow = new BrowserWindow({
-    // Use saved values OR defaults
     width: winConfig.width || 900,
     height: winConfig.height || 800,
-    // Important: x and y must be integers. If undefined, Electron centers automatically.
     x: Number.isInteger(winConfig.x) ? winConfig.x : undefined,
     y: Number.isInteger(winConfig.y) ? winConfig.y : undefined,
-    show: false, // Do not show until splash screen is done
+    show: false,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
     },
     autoHideMenuBar: true,
+    icon: path.join(__dirname, 'assets/icons/icon.png') 
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
@@ -183,35 +281,53 @@ function createWindow() {
   mainWindow.on('resize', saveWindowState);
   mainWindow.on('move', saveWindowState);
 
+  // Handle the "X"-click
+  mainWindow.on('close', (event) => {
+    if (!isQuitting && config.application.minimizeToTray) {
+      event.preventDefault();
+      mainWindow.hide();
+      return false;
+    }
+  });
+
   // Auto-close QSO Assistant ---
   mainWindow.on('closed', () => {
     mainWindow = null;
-    
-    // Close QSO Assistant if open
     if (qsoWindow && !qsoWindow.isDestroyed()) {
       qsoWindow.close();
     }
   });
 
-  uiManager = new UIManager(mainWindow, logger);
+  // Create tray if it does not exist
+  if (!tray) {
+      createTray();
+  }
 
+  // Handle Splash and Show
   mainWindow.once('ready-to-show', () => {
-    setTimeout(() => {
-      if (splashWindow) {
-        splashWindow.close();
-      }
-      mainWindow.show();
-      // Do not call .center() here, or it will override the restored position!
-    }, 3500); 
+    if (shouldShow) {
+        setTimeout(() => {
+          if (splashWindow) splashWindow.close();
+          mainWindow.show();
+        }, 3500);
+    } else {
+        // If we start minimized, just close splash immediately
+        if (splashWindow) splashWindow.close();
+    }
   });
 
-  // Auto-updater check for updates
-  autoUpdater.checkForUpdatesAndNotify();
+  uiManager = new UIManager(mainWindow, logger);
 
   // --- Updater Logic ---
 
-  // Auto-updater check for updates
-  autoUpdater.checkForUpdatesAndNotify();
+  // Check for updates immediately on startup
+  autoUpdater.checkForUpdates();
+
+  // Poll for updates every 4 hours
+  setInterval(() => {
+    logger.info('Performing periodic update check...');
+    autoUpdater.checkForUpdates();
+  }, 14400000);
 
   // Handle auto-update events
   autoUpdater.on('update-available', () => {
@@ -222,12 +338,27 @@ function createWindow() {
   });
 
   autoUpdater.on('update-downloaded', () => {
-    if (mainWindow) {
+    logger.info('Update downloaded. Ready to install.');
+
+    if (mainWindow && mainWindow.isVisible()) {
+      // If the window is visible, show the in-app toast notification
       mainWindow.webContents.send('update_downloaded');
+    } else {
+      // If the window is hidden (in tray), show a system notification
+      const notification = new Notification({
+        title: 'Wave-Flex Integrator Update',
+        body: 'A new version has been downloaded. Click to restart and install.',
+        icon: path.join(__dirname, 'assets/icons/icon.png')
+      });
+
+      notification.show();
+
+      // If user clicks the system notification, install immediately
+      notification.on('click', () => {
+        isQuitting = true; // Bypass tray logic
+        autoUpdater.quitAndInstall();
+      });
     }
-    logger.info('Update downloaded. Waiting for user to restart.');
-    // REMOVED: autoUpdater.quitAndInstall(); 
-    // We now wait for the user to trigger it via IPC.
   });
 }
 
@@ -360,6 +491,35 @@ async function fetchStationDetails(suppressErrors = false) {
   }
 }
 
+// --- Single Instance Lock Logic ---
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  logger.info('Another instance is already running. Quitting this instance.');
+  app.quit();
+} else {
+  // We have the lock. Listen for a second instance trying to start.
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    logger.info('Second instance detected. Focusing existing window.');
+    
+    // Someone tried to run a second instance, we should focus our window.
+    if (mainWindow) {
+      // If minimized to tray, show it
+      if (!mainWindow.isVisible()) {
+          mainWindow.show();
+      }
+      // If minimized to taskbar, restore it
+      if (mainWindow.isMinimized()) {
+          mainWindow.restore();
+      }
+      mainWindow.focus();
+    } else {
+        // Edge case: If window was destroyed but app is running (e.g. macOS behavior sometimes), recreate it
+        createWindow();
+    }
+  });
+}
+
 /**
  * Initializes the application once Electron is ready.
  */
@@ -384,6 +544,9 @@ app.on('ready', () => {
         }
 
         setUtilLogger(logger);
+
+        // Apply startup settings (Start with Windows/Mac)
+        updateLoginSettings();
 
         createWindow(); // Create the main window, but don't show it yet
 
@@ -433,6 +596,46 @@ app.on('ready', () => {
 
           // Attach flexRadioClient-specific event listeners here
           attachFlexRadioEventListeners();
+
+          // Initialize HTTP CAT Listener
+          httpCatListener = new HttpCatListener(config, logger);
+          
+          // Define what happens when a request comes in
+          httpCatListener.onQsy((freq, mode) => {
+            if (flexRadioClient) {
+                // 1. Send the physical command to the radio
+                flexRadioClient.setSliceFrequency(freq, mode);
+
+                // 2. BUG FIX: Optimistic Update (Solves the Race Condition)
+                // We update the internal state and push it to WaveLog immediately.
+                // We do NOT wait for the FlexRadio "sliceStatus" event, because it arrives
+                // too late (after the WaveLog window has already opened).
+                
+                if (flexRadioClient.activeTXSlices && flexRadioClient.activeTXSlices.length > 0) {
+                    const activeSlice = flexRadioClient.activeTXSlices[0];
+                    
+                    // Update the local object immediately. 
+                    // Convert Hz (from HTTP) to MHz (for internal storage/WaveLog)
+                    activeSlice.frequency = freq / 1000000.0;
+                    
+                    // Update mode if provided
+                    if (mode) {
+                        activeSlice.mode = mode.toUpperCase();
+                    }
+
+                    logger.info(`Optimistic Update: Manually pushing ${freq} Hz to WaveLog to prevent race condition.`);
+                    
+                    // Push to WaveLog immediately
+                    wavelogClient.sendActiveSliceToWavelog(activeSlice).catch((err) => {
+                        logger.error(`Error sending optimistic update: ${err.message}`);
+                    });
+                }
+            }
+          });
+
+          // Start the listener
+          httpCatListener.start();
+
         } else {
           logger.warn('No station callsign found; FlexRadio client will not be initialized.');
         }
@@ -765,6 +968,10 @@ async function shutdown() {
       wsjtClient.stop();
     }
 
+    if (httpCatListener) {
+        httpCatListener.stop();
+    }    
+
     if (mainWindow) {
       mainWindow.close();
     }
@@ -789,7 +996,10 @@ async function shutdown() {
   }
 }
 
-app.on('before-quit', shutdown);
+app.on('before-quit', () => {
+  isQuitting = true;
+  shutdown();
+});
 
 /**
  * Main function to start services.
@@ -890,6 +1100,9 @@ ipcMain.handle('update-config', async (event, newConfig) => {
 
         // --- Update global config in memory immediately ---
         config = updatedConfig;
+        
+        // Apply auto-start setting immediately
+        updateLoginSettings(); 
 
         // --- Propagate config to clients that need live updates ---
         if (qrzClient) {
@@ -970,6 +1183,7 @@ ipcMain.handle('load-global-profile', async (event, profileName) => {
  */
 ipcMain.handle('install-update', async () => {
   logger.info('User requested install. Quitting and installing...');
+  isQuitting = true; // Bypass tray logic to allow update
   autoUpdater.quitAndInstall();
 });
 
