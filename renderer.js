@@ -3,6 +3,7 @@
 
 const { ipcRenderer } = require('electron');
 const { shell } = require('electron');
+let isWavelogLive = false;
 
 /**
  * Scrolls the window to the top of the page.
@@ -23,7 +24,7 @@ function applyTheme(theme) {
       document.documentElement.setAttribute('data-bs-theme', 'light');
     }
   } else {
-    document.documentElement.setAttribute('data-bs-theme', theme);
+    document.documentElement.setAttribute('data-bs-theme', 'theme');
   }
 }
 
@@ -86,7 +87,7 @@ function setStatusElement(element, message) {
   if (message === 'Connected' || message === 'Healthy' || message === 'Responsive' || message === 'Enabled') {
     element.textContent = message;
     element.classList.add('text-success'); // Green
-  } else if (message === 'Disconnected' || message === 'Unhealthy' || message === 'Inresponsive') {
+  } else if (message === 'Disconnected' || message === 'Unhealthy' || message === 'Inresponsive' || message === 'Unresponsive') {
     element.textContent = message;
     element.classList.add('text-danger'); // Red
   } else if (message === 'Disabled' || message === 'Unitialized') {
@@ -102,6 +103,29 @@ function setStatusElement(element, message) {
     // Default styling for other messages
     element.textContent = message;
   }
+}
+
+/**
+ * Updates the Connection Mode Badge (Live/Polling/Offline).
+ * @param {string} status - 'live', 'polling', or 'offline'.
+ */
+function updateConnectionBadge(status) {
+    const badge = document.getElementById('connectionModeBadge');
+    if (!badge) return;
+
+    // Reset Classes
+    badge.className = 'badge rounded-pill p-2';
+    
+    if (status === 'live') {
+        badge.classList.add('text-bg-success');
+        badge.innerHTML = '<i class="bi bi-lightning-charge-fill me-1"></i> Live (WS)';
+    } else if (status === 'polling') {
+        badge.classList.add('text-bg-warning');
+        badge.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Polling';
+    } else {
+        badge.classList.add('text-bg-secondary'); // Gray for offline
+        badge.innerHTML = '<i class="bi bi-dash-circle-fill me-1"></i> Offline';
+    }
 }
 
 /**
@@ -140,6 +164,12 @@ function populateForm(config) {
   const catPort = document.getElementById('catListenerPort');
   if(catPort) catPort.value = catConfig.port;
 
+// Populate Wavelog Live Listener Settings
+  const wlLiveConfig = config.wavelogLive || { port: 54322 };
+
+  const wlLivePort = document.getElementById('wavelogLivePort');
+  if(wlLivePort) wlLivePort.value = wlLiveConfig.port;
+
   // Theme
   const theme = appConfig.theme || 'system';
   const themeSelect = document.getElementById('appTheme');
@@ -168,10 +198,7 @@ function populateForm(config) {
   const showMediaCheckbox = document.getElementById('appShowQsoMedia');
   if (showMediaCheckbox) showMediaCheckbox.checked = appConfig.showQsoMedia || false;
   
-  const autoLogCheckbox = document.getElementById('appAutoLogQso');
-  if (autoLogCheckbox) autoLogCheckbox.checked = appConfig.autoLogQso || false;
-    
-  // Compact Mode
+    // Compact Mode
   const compactModeCheckbox = document.getElementById('appCompactMode');
   if (compactModeCheckbox) {
     compactModeCheckbox.checked = appConfig.compactMode || false;
@@ -243,6 +270,16 @@ function populateForm(config) {
   const dxClusterPortInput = document.getElementById('dxClusterPort');
   if (dxClusterPortInput) {
     dxClusterPortInput.value = config.dxCluster.port;
+  }
+
+const dxClusterBackupHostInput = document.getElementById('dxClusterBackupHost');
+  if (dxClusterBackupHostInput) {
+    dxClusterBackupHostInput.value = config.dxCluster.backupHost || '';
+  }
+
+  const dxClusterBackupPortInput = document.getElementById('dxClusterBackupPort');
+  if (dxClusterBackupPortInput) {
+    dxClusterBackupPortInput.value = config.dxCluster.backupPort || '';
   }
 
   const dxClusterCallsignInput = document.getElementById('dxClusterCallsign');
@@ -531,7 +568,6 @@ if (configForm) {
         autoOpenQSO: document.getElementById('appAutoOpenQSO').checked,
         useImperial: document.getElementById('appUseImperial').checked,
         showQsoMedia: document.getElementById('appShowQsoMedia').checked,
-        autoLogQso: document.getElementById('appAutoLogQso').checked, 
         window: {
             width: parseInt(document.getElementById('appWindowWidth').value) || 900,
             height: parseInt(document.getElementById('appWindowHeight').value) || 800
@@ -547,6 +583,9 @@ if (configForm) {
         enabled: document.getElementById('catListenerEnabled').checked,
         host: document.getElementById('catListenerHost').value.trim() || '127.0.0.1',
         port: parseInt(document.getElementById('catListenerPort').value) || 54321
+      },
+      wavelogLive: {
+        port: parseInt(document.getElementById('wavelogLivePort').value) || 54322
       },      
       // --- Rotator Settings ---
       rotator: {
@@ -572,6 +611,9 @@ if (configForm) {
       dxCluster: {
         host: document.getElementById('dxClusterHost').value.trim(),
         port: parseInt(document.getElementById('dxClusterPort').value, 10),
+        backupHost: document.getElementById('dxClusterBackupHost').value.trim(),
+        backupPort: document.getElementById('dxClusterBackupPort').value ? parseInt(document.getElementById('dxClusterBackupPort').value, 10) : null,
+
         callsign: document.getElementById('dxClusterCallsign').value.trim(),
         loginPrompt: document.getElementById('dxClusterLoginPrompt').value.trim(),
         commandsAfterLogin: document
@@ -715,6 +757,27 @@ if (resetDefaultsButton) {
   });
 }
 
+// --- Certificate Installation Handler ---
+const installCertBtn = document.getElementById('installCertBtn');
+if (installCertBtn) {
+  installCertBtn.addEventListener('click', async () => {
+    installCertBtn.disabled = true;
+    installCertBtn.innerText = "Installing...";
+    
+    // Invoke the main process to run the certutil command
+    const success = await ipcRenderer.invoke('install-certificate');
+    
+    if (success) {
+      showAlert("Certificate installation triggered. Please approve the Windows prompt and RESTART your browser.", "success");
+      installCertBtn.innerText = "Certificate Installed";
+    } else {
+      showAlert("Failed to trigger installation or cancelled.", "danger");
+      installCertBtn.disabled = false;
+      installCertBtn.innerText = "Install Local Certificate";
+    }
+  });
+}
+
 /**
  * Handles various status update events.
  * @param {object} status - The status object containing event type and related data.
@@ -722,7 +785,10 @@ if (resetDefaultsButton) {
 function handleStatusUpdate(status) {
   switch (status.event) {
     case 'flexRadioConnected':
-      updateFlexRadioStatus('Connected');
+      // Display Host IP if available, otherwise fallback to "Connected"
+      const flexMsg = status.host ? status.host : 'Connected';
+      updateFlexRadioStatus(flexMsg);
+      
       isFlexRadioConnected = true;
       // If we are currently on the Profiles tab, load data automatically now
       const activeTab = document.querySelector('.nav-link.active');
@@ -738,8 +804,13 @@ function handleStatusUpdate(status) {
     case 'flexRadioError':
       updateFlexRadioStatus(`Error: ${status.error}`);
       break;
-    case 'dxClusterConnected':
-      updateDXClusterStatus('Connected');
+case 'dxClusterConnected':
+      // Just show the hostname to save space. It implies "Connected".
+      if (status.server) {
+          updateDXClusterStatus(status.server);
+      } else {
+          updateDXClusterStatus('Connected');
+      }
       break;
     case 'dxClusterDisconnected':
       updateDXClusterStatus('Disconnected');
@@ -749,9 +820,13 @@ function handleStatusUpdate(status) {
       break;
     case 'WavelogResponsive':
       updateWavelogStatus(status.message);
+      if (!isWavelogLive) {
+          updateConnectionBadge('polling'); 
+      }
       break;
     case 'WavelogUnresponsive':
       updateWavelogStatus('Unresponsive');
+      updateConnectionBadge('offline');
       break;
     case 'WSJTEnabled':
       updateWSJTStatus('Enabled');
@@ -771,6 +846,15 @@ function handleStatusUpdate(status) {
     case 'configUpdated':
       showAlert(status.message, 'info');
       break;
+    case 'connectionMode':
+      // Update state and badge
+      if (status.mode === 'live') {
+          isWavelogLive = true;
+      } else if (status.mode === 'polling' || status.mode === 'offline') {
+          isWavelogLive = false;
+      }
+      updateConnectionBadge(status.mode); 
+      break;
     default:
       // Unknown event; no action required
       break;
@@ -784,23 +868,44 @@ ipcRenderer.on('status-update', (event, status) => {
 
 /**
  * Updates FlexRadio connection status in the "Connected Services" tab.
- * @param {string} message - The status message.
+ * @param {string} message - The status message (or IP address).
  */
 function updateFlexRadioStatus(message) {
   const flexStatus = document.getElementById('flexRadioStatus');
   if (flexStatus) {
-    setStatusElement(flexStatus, message);
+    flexStatus.textContent = message;
+    
+    // Reset classes and force Green color (text-success) for active connections
+    flexStatus.classList.remove('text-danger', 'text-warning');
+    flexStatus.classList.add('text-success');
+    
+    // If it's an error message (starts with Error or Disconnected), revert to red
+    if (message.startsWith('Error') || message === 'Disconnected') {
+        flexStatus.classList.remove('text-success');
+        flexStatus.classList.add('text-danger');
+    }
   }
 }
 
 /**
  * Updates DXCluster connection status in the "Connected Services" tab.
- * @param {string} message - The status message.
+ * @param {string} message - The status message (or hostname).
  */
 function updateDXClusterStatus(message) {
   const dxStatus = document.getElementById('dxClusterStatus');
   if (dxStatus) {
-    setStatusElement(dxStatus, message);
+    dxStatus.textContent = message;
+    
+    // Reset colors
+    dxStatus.classList.remove('text-danger', 'text-warning', 'text-success');
+
+    // Determine color based on content
+    if (message === 'Disconnected' || message.startsWith('Error')) {
+        dxStatus.classList.add('text-danger'); // Red
+    } else {
+        // Assume it is a hostname (Connected state)
+        dxStatus.classList.add('text-success'); // Green
+    }
   }
 }
 
@@ -1104,16 +1209,12 @@ ipcRenderer.on('flex-global-profiles', (event, profiles) => {
  * 1. Scans all profiles to see which Modes exist globally.
  * 2. Creates rows ONLY for those modes.
  * 3. Fills gaps with empty slots to maintain alignment.
+ * 4. Displays help text if no matching profiles are found.
  * @param {string[]} profiles - List of profile names.
  */
 function renderProfiles(profiles) {
   const grid = document.getElementById('profilesGrid');
   grid.innerHTML = '';
-
-  if (!profiles || profiles.length === 0) {
-    grid.innerHTML = '<div class="alert alert-warning m-3">No profiles found.</div>';
-    return;
-  }
 
   // 1. Setup Bands and Sorting
   const displayOrder = ['6M', '10M', '12M', '15M', '17M', '20M', '30M', '40M', '60M', '80M', '160M'];
@@ -1134,31 +1235,92 @@ function renderProfiles(profiles) {
   // Track which modes are actually used across ALL bands
   const activeModesSet = new Set();
 
-  profiles.forEach(name => {
-    if (name === 'Default') return;
-    const upperName = name.toUpperCase();
-    const lowerName = name.toLowerCase();
+  if (profiles && profiles.length > 0) {
+      profiles.forEach(name => {
+        if (name === 'Default') return;
+        const upperName = name.toUpperCase();
+        const lowerName = name.toLowerCase();
 
-    // Check which mode this profile belongs to
-    allModeDefinitions.forEach(mode => {
-        if (mode.matcher(upperName)) {
-            activeModesSet.add(mode.id);
+        // Check which mode this profile belongs to
+        allModeDefinitions.forEach(mode => {
+            if (mode.matcher(upperName)) {
+                activeModesSet.add(mode.id);
+            }
+        });
+        
+        // Assign to band bucket
+        for (const bandLabel of searchOrder) {
+          if (lowerName.includes(bandLabel.toLowerCase())) {
+              bandBuckets[bandLabel].push(name);
+              return;
+          }
         }
-    });
-    
-    // Assign to band bucket
-    for (const bandLabel of searchOrder) {
-      if (lowerName.includes(bandLabel.toLowerCase())) {
-          bandBuckets[bandLabel].push(name);
-          return;
-      }
-    }
-  });
+      });
+  }
 
-  // 4. Filter the Mode Rows: Only keep modes that exist in at least one profile
+  // 4. Check if we found anything meaningful to display
+  if (activeModesSet.size === 0) {
+      // Render Help / Empty State
+      grid.innerHTML = `
+        <div class="d-flex justify-content-center mt-5">
+            <div class="card bg-light-subtle border-secondary" style="max-width: 700px;">
+                <div class="card-body">
+                    <h5 class="card-title text-primary mb-3">
+                        <i class="bi bi-info-circle-fill me-2"></i>Profile Manager
+                    </h5>
+                    <p class="card-text">
+                        The Profiles tab automatically organizes your FlexRadio Global Profiles into a grid. 
+                        However, <strong>no compatible profiles were found</strong>.
+                    </p>
+                    <div class="alert alert-secondary mt-3">
+                        <h6><i class="bi bi-exclamation-triangle me-2"></i>Naming Requirement</h6>
+                        <p class="mb-0 small">
+                            To appear here, profile names MUST contain <strong>BOTH</strong> a Band and a Mode.
+                        </p>
+                    </div>
+                    <div class="row small text-muted mb-3">
+                        <div class="col-md-6">
+                            <strong>Recognized Bands:</strong><br>
+                            160M, 80M ... 10M, 6M
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Recognized Modes:</strong><br>
+                            CW, SSB (LSB/USB/PH), DIGI (FT8/RTTY), FM
+                        </div>
+                    </div>
+                    <p class="small fw-bold">Examples that work:</p>
+                    <ul class="small text-muted">
+                        <li>"20M CW"</li>
+                        <li>"40M LSB - Contest"</li>
+                        <li>"10M FT8"</li>
+                    </ul>
+                    <div class="text-center mt-4">
+                        <!-- Added ID profilesHelpLink to attach listener manually -->
+                        <a id="profilesHelpLink" href="https://github.com/tnxqso/wave-flex-integrator?tab=readme-ov-file#profile-manager" 
+                           class="btn btn-outline-primary btn-sm">
+                           <i class="bi bi-book me-1"></i> Read Full Documentation
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+      `;
+
+      // Manually attach listener to open in external browser, as this HTML is dynamic
+      const helpLink = document.getElementById('profilesHelpLink');
+      if (helpLink) {
+          helpLink.addEventListener('click', (e) => {
+              e.preventDefault();
+              shell.openExternal(e.currentTarget.href);
+          });
+      }
+      return;
+  }
+
+  // 5. Filter the Mode Rows: Only keep modes that exist in at least one profile
   const rowsToRender = allModeDefinitions.filter(mode => activeModesSet.has(mode.id));
 
-  // 5. Render the Grid
+  // 6. Render the Grid
   displayOrder.forEach(bandKey => {
     // Optional: Skip empty bands if you want to save horizontal space
     if (bandBuckets[bandKey].length === 0) return;

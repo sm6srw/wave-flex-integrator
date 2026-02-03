@@ -12,7 +12,6 @@ const defaultConfig = {
     autoOpenQSO: false,
     useImperial: false,
     showQsoMedia: false,
-    autoLogQso: false,
     startMinimized: false,
     minimizeToTray: true,
     startAtLogin: false,
@@ -62,8 +61,10 @@ const defaultConfig = {
   // DX Cluster Configuration
   // ==============================
   dxCluster: {
-    host: 'dxc.ve7cc.net',     // Hostname or IP of the DXCluster server
-    port: 23,                  // Port for the DXCluster server
+    host: 'dxc.ve7cc.net',     // Primary Hostname or IP
+    port: 23,                  // Primary Port
+    backupHost: 'sk3w.se',     // Backup: SK3W (Sweden, reliable DXSpider)
+    backupPort: 8000,          // Backup Port
     callsign: 'YOUR-CALLSIGN-HERE',              // User callsign for login
     loginPrompt: 'login:',     // Expected login prompt from the DXCluster server
     commandsAfterLogin: [      // Commands to execute after successful login
@@ -170,9 +171,17 @@ const defaultConfig = {
   // ==============================
   catListener: {
     enabled: true,
-    host: '127.0.0.1', // Listen on localhost by default for security
+    host: '0.0.0.0',
     port: 54321,       // Default Wavelog port
-  },  
+  }, 
+
+  // ==============================
+  // Wavelog Live Metadata Listener (WebSocket)
+  // ==============================
+  wavelogLive: {
+    enabled: true,     // Master switch for metadata reception
+    port: 54322        // Standard Wavelog WebSocket port
+  }
 
 };
 
