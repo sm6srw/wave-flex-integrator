@@ -275,6 +275,12 @@ const compactModeCheckbox = document.getElementById('appCompactMode');
   }
 
   // Populate DX Cluster Configuration
+  const dxClusterEnabledCheck = document.getElementById('dxClusterEnabled');
+  if (dxClusterEnabledCheck) {
+    // Default to true if undefined to maintain backward compatibility
+    dxClusterEnabledCheck.checked = config.dxCluster.enabled !== false;
+  }
+
   const dxClusterHostInput = document.getElementById('dxClusterHost');
   if (dxClusterHostInput) {
     dxClusterHostInput.value = config.dxCluster.host;
@@ -626,6 +632,7 @@ if (configForm) {
         maxSize: parseInt(document.getElementById('augmentedSpotCacheMaxSize').value, 10),
       },
       dxCluster: {
+        enabled: document.getElementById('dxClusterEnabled').checked,
         host: document.getElementById('dxClusterHost').value.trim(),
         port: parseInt(document.getElementById('dxClusterPort').value, 10),
         backupHost: document.getElementById('dxClusterBackupHost').value.trim(),
@@ -864,7 +871,11 @@ function handleStatusUpdate(status) {
       document.getElementById('sb-icon-dxc').className = 'bi bi-circle-fill sb-icon-err';
       document.getElementById('sb-label-dxc').classList.remove('sb-label-active');
       break;
-
+    case 'dxClusterDisabled':
+      updateDXClusterStatus('Disabled');
+      document.getElementById('sb-icon-dxc').className = 'bi bi-circle-fill sb-icon-disabled';
+      document.getElementById('sb-label-dxc').classList.remove('sb-label-active');
+      break;
     case 'rotatorConnected':
       document.getElementById('sb-icon-rot').className = 'bi bi-circle-fill sb-icon-ok';
       document.getElementById('sb-label-rot').classList.add('sb-label-active');
@@ -983,11 +994,14 @@ function updateDXClusterStatus(message) {
   if (dxStatus) {
     dxStatus.textContent = message;
     
-    // Reset colors
+    // Reset colors and inline styles
     dxStatus.classList.remove('text-danger', 'text-warning', 'text-success');
+    dxStatus.style.color = ''; 
 
     // Determine color based on content
-    if (message === 'Disconnected' || message.startsWith('Error')) {
+    if (message === 'Disabled') {
+        dxStatus.style.color = '#d3d3d3'; // Gray (Disabled)
+    } else if (message === 'Disconnected' || message.startsWith('Error')) {
         dxStatus.classList.add('text-danger'); // Red
     } else {
         // Assume it is a hostname (Connected state)

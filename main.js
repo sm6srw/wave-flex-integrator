@@ -51,13 +51,48 @@ let qrzClient;
 
 const isDebug = process.argv.includes('--debug');
 
-function getDebugLogPath() {
-  const localAppData =
-    process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+// We cache the path to ensure consistency throughout the app's lifecycle.
+// This prevents the path from changing if called before vs. after app.isReady().
+let cachedLogPath = null;
 
-  return path.join(localAppData, 'wave-flex-integrator', 'logs', 'debug.log');
+function getDebugLogPath() {
+  if (cachedLogPath) {
+    return cachedLogPath;
+  }
+
+  // 1. Try to use Electron's native API (Main Process only)
+  try {
+    if (typeof app !== 'undefined' && app.isReady()) {
+      cachedLogPath = path.join(app.getPath('logs'), 'debug.log');
+      return cachedLogPath;
+    }
+  } catch (err) {
+    // Ignore errors (e.g. running in Renderer process without remote module)
+  }
+
+  // 2. Fallback logic (Renderer process or early startup)
+  const platform = process.platform;
+  const home = os.homedir();
+  let baseDir;
+
+  if (platform === 'win32') {
+    // Windows: Use LocalAppData (better for logs than Roaming)
+    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    baseDir = path.join(localAppData, 'wave-flex-integrator', 'logs');
+  } else if (platform === 'darwin') {
+    // macOS: ~/Library/Logs/wave-flex-integrator/
+    baseDir = path.join(home, 'Library', 'Logs', 'wave-flex-integrator');
+  } else {
+    // Linux: ~/.cache/wave-flex-integrator/logs/
+    const cacheHome = process.env.XDG_CACHE_HOME || path.join(home, '.cache');
+    baseDir = path.join(cacheHome, 'wave-flex-integrator', 'logs');
+  }
+
+  cachedLogPath = path.join(baseDir, 'debug.log');
+  return cachedLogPath;
 }
 
+module.exports = { getDebugLogPath };
 const debugLogPath = getDebugLogPath();
 
 if (isDebug) {
@@ -633,9 +668,18 @@ app.on('ready', () => {
               // Send command to radio (Set internal qsyLock)
               const qsyResult = flexRadioClient.setSliceFrequency(freq, mode);
 
+              logger.debug(`[OPTIMISTIC DEBUG] qsyResult.success: ${qsyResult.success}`);
+              logger.debug(`[OPTIMISTIC DEBUG] activeTXSlices exists: ${!!flexRadioClient.activeTXSlices}`);
+              if (flexRadioClient.activeTXSlices) {
+                  logger.debug(`[OPTIMISTIC DEBUG] activeTXSlices length: ${flexRadioClient.activeTXSlices.length}`);
+              } else {
+                  logger.debug(`[OPTIMISTIC DEBUG] activeTXSlices is NULL or UNDEFINED`);
+              }
+
               // Perform Optimistic Update: Push new state to UI immediately
               if (qsyResult.success && flexRadioClient.activeTXSlices && flexRadioClient.activeTXSlices.length > 0) {
-                const activeSlice = flexRadioClient.activeTXSlices[0];
+                const activeSlice = { ...flexRadioClient.activeTXSlices[0] }; 
+                
                 activeSlice.frequency = freq / 1000000.0;
                 if (mode) activeSlice.mode = mode.toUpperCase();
 
@@ -645,6 +689,19 @@ app.on('ready', () => {
               return qsyResult;
             }
             return { success: false, error: 'FlexRadio client not initialized' };
+          });
+
+          // Listen for fatal errors (like Port busy)
+          httpCatListener.on('error', (err) => {
+              if (err.code === 'EADDRINUSE') {
+                  const port = config.catListener?.port || 54321;
+                  dialog.showErrorBox(
+                      'Port Conflict Detected',
+                      `Unable to start the CAT Listener on port ${port}.\n\n` +
+                      `Another application (like WaveLogGate) is likely already using this port.\n\n` +
+                      `Please close conflicting applications or change the port in Settings.`
+                  );
+              }
           });
 
           httpCatListener.start(certs);
@@ -731,14 +788,21 @@ app.on('ready', () => {
         // Start main application logic
         main();
 
-        // Update UI status after startup delay
-        setTimeout(async () => {
+          // Update UI status after startup delay
+          setTimeout(async () => {
+          // Check WSJT
           if (config.wsjt.enabled) {
             uiManager.updateWSJTStatus('WSJTEnabled');
           } else {
             uiManager.updateWSJTStatus('WSJTDisabled');
           }
 
+          // Check DX Cluster (Force UI update if disabled)
+          if (!config.dxCluster?.enabled) {
+             uiManager.updateDXClusterStatus('dxClusterDisabled');
+          }
+
+          // Check Wavelog Profile
           if (stationCallsign) {
             uiManager.updateWavelogStatus('WavelogResponsive', await (wavelogClient.getStationProfileName()));
           }
@@ -755,14 +819,8 @@ app.on('ready', () => {
  * Checks if the essential configuration is valid.
  */
 function isConfigValid() {
-  if (
-    !config.dxCluster ||
-    !config.dxCluster.callsign ||
-    !config.dxCluster.host ||
-    config.dxCluster.callsign.trim() === ''
-  ) {
-    return false;
-  }
+  // DX Cluster config is optional now. We check validity before connecting later.
+  
   if (
     !config.flexRadio ||
     !config.flexRadio.host ||
@@ -1096,7 +1154,26 @@ function main() {
     } else {
       // If everything is configured, start the services
       flexRadioClient.connect();
-      dxClusterClient.connect();
+
+      // Only connect to DX Cluster if enabled and configuration is valid
+      if (
+        config.dxCluster &&
+        config.dxCluster.enabled &&
+        config.dxCluster.host &&
+        config.dxCluster.callsign &&
+        config.dxCluster.host.trim() !== '' &&
+        config.dxCluster.callsign.trim() !== ''
+      ) {
+        dxClusterClient.connect();
+      } else {
+        if (!config.dxCluster?.enabled) {
+            logger.info('DX Cluster is disabled in configuration. Skipping connection.');
+            uiManager.updateDXClusterStatus('dxClusterDisabled');
+        } else {
+            logger.info('DX Cluster configuration is incomplete. Skipping connection.');
+            // Optional: You could send a specific error status here too if desired
+        }
+      }
 
       // Auto-open QSO Assistant?
       if (config.application?.autoOpenQSO) {
@@ -1287,6 +1364,14 @@ ipcMain.handle('install-update', async () => {
 
 ipcMain.handle('open-qso-assistant', () => {
   createQSOWindow();
+});
+
+/**
+ * Returns the current connection status of the FlexRadio.
+ * Used by QSO Assistant to enable/disable buttons.
+ */
+ipcMain.handle('get-radio-status', () => {
+  return flexRadioClient && flexRadioClient.isConnected();
 });
 
 ipcMain.handle('lookup-callsign', async (event, callsign) => {

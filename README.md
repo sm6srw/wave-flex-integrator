@@ -463,7 +463,7 @@ Run the application with debug logging:
 
 
   ```bash
-  /Applications/Wave-Flex\ Integrator.app/Contents/MacOS/wave-flex-integrator -- -- --debug
+  /Applications/WaveFlexIntegrator.app/Contents/MacOS/WaveFlexIntegrator -- -- --debug
   ```
 
 This creates a `debug.log` file with detailed logs.
@@ -472,24 +472,24 @@ This creates a `debug.log` file with detailed logs.
 
 Use the application until the problem occurs to ensure relevant information is logged.
 
-### Locate the `debug.log` File
+### Locate the debug.log File
 
 - **Windows**:
 
   ```
-  C:\Users\<YourUsername>\AppData\Roaming\wave-flex-integrator\debug.log
+  %LOCALAPPDATA%\wave-flex-integrator\logs\debug.log
   ```
 
 - **Linux**:
 
   ```
-  ~/.config/wave-flex-integrator/debug.log
+  ~/.cache/wave-flex-integrator/logs/debug.log
   ```
 
 - **macOS**:
 
   ```
-  ~/Library/Application Support/wave-flex-integrator/debug.log
+  ~/Library/Logs/wave-flex-integrator/debug.log
   ```
 
 ### Send the `debug.log` File
